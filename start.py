@@ -21,7 +21,6 @@ import random
 import asyncio
 import aiohttp
 from typing import Callable, Coroutine, List
-import images_qr
 import pymongo
 
 
