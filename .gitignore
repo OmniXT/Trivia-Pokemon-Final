@@ -1,0 +1,11 @@
+fonts.py
+images.qrc
+images_qr.py
+opencv_test.py
+qsvg_test.py
+start.spec
+svgviewer.py
+test.py
+MysteryPokemons
+.idea
+__pycache__
