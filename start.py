@@ -1,15 +1,18 @@
 #GUI imports
+import pickle
 import pprint
 import re
 import shutil
+import socket
 import sys
+from time import sleep
 from typing import Any
 
-from PyQt5.QtCore import Qt, QFile
+from PyQt5.QtCore import Qt, QFile, QObject, pyqtSignal, QThread
 from PyQt5.QtOpenGL import QGLWidget, QGLFormat, QGL
 from PyQt5.QtSvg import QGraphicsSvgItem, QSvgRenderer
 from PyQt5.QtWidgets import QGridLayout, QLabel, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QSpacerItem, \
-    QSizePolicy, QGraphicsView, QGraphicsScene, QGraphicsItem, QGraphicsRectItem
+    QSizePolicy, QGraphicsView, QGraphicsScene, QGraphicsItem, QGraphicsRectItem, QLineEdit
 from PyQt5.QtGui import QPixmap, QCursor, QImage, QIcon, QPalette, QColor, QPainter, QBrush, QPen
 from PyQt5 import QtCore, QtSvg
 from PyQt5.QtWidgets import QMainWindow, QApplication, QWidget, QStackedLayout
@@ -19,7 +22,13 @@ import asyncio
 import aiohttp
 from typing import Callable, Coroutine, List
 import images_qr
+import pymongo
 
+
+client = pymongo.MongoClient("mongodb+srv://dbUser:8624@cluster0.dfylnsx.mongodb.net/?retryWrites=true&w=majority")
+db = client["trivia-app"]
+servers = db.servers
+print(servers)
 
 
 pokemons_with_sprites = []
@@ -391,7 +400,7 @@ class Question(QWidget):
             final_score_widget.aciertos_holder.setText(f"Correct: {self.aciertos}")
             final_score_widget.desaciertos_holder.setText(f"Incorrect: {self.desaciertos}")
             print(final_score_widget.final_score_holder.text())
-            window.stacklayout.setCurrentIndex(2)
+            window.stacklayout.setCurrentIndex(4)
         else:
             print(f"{button.text()=}")
             self.index += 1
@@ -414,9 +423,6 @@ class Question(QWidget):
 class FinalScores(QWidget):
 
     print("FinalScores: Out of __init__")
-
-    # final_score: int = 0
-    # final_score_holder: QLabel
 
     def __init__(self):
         print("FinalScores Init")
@@ -453,7 +459,7 @@ class FinalScores(QWidget):
         self.desaciertos_holder = QLabel()
         self.desaciertos_holder.setAlignment(Qt.AlignCenter)
         self.desaciertos_holder.setStyleSheet(
-                '''
+            '''
             *{
                 font: Bahnschrift Light;
                 font-size: 50px;
@@ -471,6 +477,156 @@ class FinalScores(QWidget):
         v_layout.setAlignment(QtCore.Qt.AlignCenter)
         self.setLayout(v_layout)
 
+class JoinGame(QWidget):
+
+    print("FinalScores: Out of __init__")
+
+    def __init__(self):
+        print("FinalScores Init")
+        super(JoinGame, self).__init__()
+        v_layout = QVBoxLayout()
+        verticalSpacer = QSpacerItem(0, 0, hPolicy=QSizePolicy.Minimum, vPolicy=QSizePolicy.Expanding)
+        verticalSpacer2 = QSpacerItem(0, 0, hPolicy=QSizePolicy.Minimum, vPolicy=QSizePolicy.Expanding)
+        self.server: dict
+        self.pin_label = QLabel("PIN")
+        self.pin_label.setAlignment(Qt.AlignCenter)
+        self.pin_label.setStyleSheet(
+            '''
+            *{
+                font: Bahnschrift SemiBold;
+                font-size: 100px;
+                color: '#BBE6FA'; 
+                /* padding: 25px 0; */
+                /* margin: 10px 200px; */
+            }
+            '''
+        )
+        self.pin_input = QLineEdit()
+        self.pin_input.setAlignment(Qt.AlignCenter)
+        self.pin_input.setStyleSheet(
+            """
+                *{
+                    margin-left: %d px;
+                    margin-right: %d px;
+                    border: 4px solid '#BBE6FA';
+                    font-family: 'shanti';
+                    font-size: 100px;
+                    color: white;
+                    border-radius: 50px;
+                    padding: 15px 0;
+                    margin-top: 20px;
+                }/*
+                *:hover{
+                    background: '#BBE6FA';
+                    color: '#171D20'
+                }*/
+            """ % (85, 5)
+        )
+        self.pin_input.returnPressed.connect(self.exec_long_task)
+        v_layout.addItem(verticalSpacer)
+        v_layout.addWidget(self.pin_label)
+        v_layout.addWidget(self.pin_input)
+        v_layout.addItem(verticalSpacer2)
+        v_layout.setAlignment(QtCore.Qt.AlignCenter)
+        self.setLayout(v_layout)
+
+    def exec_long_task(self):
+        # Step 2: Create a QThread object
+        self.thread = QThread()
+        # Step 3: Create a worker object
+        self.worker = Worker2()
+        # Step 4: Move worker to the thread
+        self.worker.moveToThread(self.thread)
+        # Step 5: Connect signals and slots
+        self.thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
+        # Step 6: Start the thread
+        self.thread.start()
+
+        self.thread.finished.connect(
+            lambda: print(
+                join_game_widget.server
+            )
+        )
+
+        self.thread.finished.connect(
+            lambda: self.recieve_questions()
+        )
+
+        self.thread.finished.connect(
+            lambda: trivia_menu_widget.show_question_panel()
+        )
+
+    def recieve_questions(self):
+        # Establecemos el tipo de socket/conexion
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        port = 5000  # Puerto de comunicacion
+        # Realizamos la conexion al la IP y puerto
+        sock.connect((join_game_widget.server["IP"], port))
+        # Leemos los datos del servidor
+        data = sock.recv(20480)
+        data = pickle.loads(data)
+        # Cerramos el socket
+        sock.close()
+        # Mostramos los datos recibidos
+        print(data)
+
+
+class Worker2(QObject):
+    finished = pyqtSignal()
+    progress = pyqtSignal(int)
+
+    def run(self):
+        """Long-running task."""
+        join_game_widget.server = servers.find_one({"PIN": join_game_widget.pin_input.text()})
+        self.finished.emit()
+
+
+class CreateGame(QWidget):
+
+    print("FinalScores: Out of __init__")
+
+    def __init__(self):
+        print("FinalScores Init")
+        super(CreateGame, self).__init__()
+        v_layout = QVBoxLayout()
+        verticalSpacer = QSpacerItem(0, 0, hPolicy=QSizePolicy.Minimum, vPolicy=QSizePolicy.Expanding)
+        verticalSpacer2 = QSpacerItem(0, 0, hPolicy=QSizePolicy.Minimum, vPolicy=QSizePolicy.Expanding)
+        self.pin_label = QLabel("PIN")
+        self.pin_label.setAlignment(Qt.AlignCenter)
+        self.pin_label.setStyleSheet(
+            '''
+            *{
+                font: Bahnschrift SemiBold;
+                font-size: 100px;
+                color: '#BBE6FA'; 
+                /* padding: 25px 0; */
+                /* margin: 10px 200px; */
+            }
+            '''
+        )
+        self.pin_holder = QLabel()
+        self.pin_holder.setAlignment(Qt.AlignCenter)
+        self.pin_holder.setStyleSheet(
+            '''
+            *{
+                font: Bahnschrift Light;
+                font-size: 50px;
+                color: '#BBE6FA'; 
+                /* padding: 25px 0; */
+                /* margin: 10px 200px; */
+            }
+            '''
+        )
+        v_layout.addItem(verticalSpacer)
+        v_layout.addWidget(self.pin_label)
+        v_layout.addWidget(self.pin_holder)
+        v_layout.addItem(verticalSpacer2)
+        v_layout.setAlignment(QtCore.Qt.AlignCenter)
+        self.setLayout(v_layout)
+
 
 class TriviaMenu(QWidget):
 
@@ -484,7 +640,7 @@ class TriviaMenu(QWidget):
         horizontalSpacer = QSpacerItem(0, 0, hPolicy=QSizePolicy.Fixed, vPolicy=QSizePolicy.Minimum)
         horizontalSpacer2 = QSpacerItem(0, 0, hPolicy=QSizePolicy.Fixed, vPolicy=QSizePolicy.Minimum)
         v_layout = QVBoxLayout()
-        image = QPixmap(":/Images/classic_pokemon_logo.png")
+        image = QPixmap("Images/classic_pokemon_logo.png")
         logo = QLabel()
         logo.setPixmap(image)
         logo.setAlignment(QtCore.Qt.AlignCenter)
@@ -516,50 +672,10 @@ class TriviaMenu(QWidget):
         join_game_button.setFixedWidth(500)
         create_game_button.setFixedWidth(500)
 
-        # join_game_button.setStyleSheet(
-        #     '''
-        #     *{
-        #         border: 4px solid '#BBE6FA';
-        #         border-radius: 25px;
-        #         font-size: 35px;
-        #         color: '#BBE6FA';
-        #         padding: 25px 0;
-        #         margin: 10px 200px;
-        #     }
-        #     *:hover{
-        #         background: '#BBE6FA';
-        #         color: '#171D20'
-        #     }
-        #     '''
-        # )
-        # create_game_button.setStyleSheet(
-        #     '''
-        #     *{
-        #         border: 4px solid '#BBE6FA';
-        #         border-radius: 25px;
-        #         font-size: 35px;
-        #         color: '#BBE6FA';
-        #         padding: 25px 0;
-        #         margin: 10px 200px;
-        #     }
-        #     *:hover{
-        #         background: '#BBE6FA';
-        #         color: '#171D20'
-        #     }
-        #     '''
-        # )
+        join_game_button.clicked.connect(self.show_join_game_panel)
+        create_game_button.clicked.connect(self.exec_long_task)
 
-        join_game_button.clicked.connect(self.show_question_panel)
-
-        # grid.addItem(verticalSpacer)
-        #
-        # grid.addWidget(logo, 0, 0, 1, 2)
-        # grid.addWidget(join_game_button, 1, 0, 1, 2)
-        # grid.addWidget(create_game_button, 2, 0, 1, 2)
-        #
-        # grid.addItem(verticalSpacer2)
-        #
-        # self.setLayout(grid)
+        # join_game_button.clicked.connect(self.show_question_panel)
 
         v_layout.addItem(verticalSpacer)
 
@@ -583,8 +699,78 @@ class TriviaMenu(QWidget):
 
         self.setLayout(v_layout)
 
-    def show_question_panel(self):
+    def exec_long_task(self):
+        # Step 2: Create a QThread object
+        self.thread = QThread()
+        # Step 3: Create a worker object
+        self.worker = Worker()
+        self.worker3 = Worker3()
+        # Step 4: Move worker to the thread
+        self.worker.moveToThread(self.thread)
+        self.worker3.moveToThread(self.thread)
+        # Step 5: Connect signals and slots
+        self.thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.worker3.finished.connect(self.thread.quit)
+        self.worker3.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
+        # Step 6: Start the thread
+        self.thread.start()
+
+        self.thread.finished.connect(
+            lambda: self.show_create_game_panel()
+        )
+
+    def show_join_game_panel(self):
         window.stacklayout.setCurrentIndex(1)
+
+    def show_create_game_panel(self):
+        window.stacklayout.setCurrentIndex(2)
+
+    def show_question_panel(self):
+        window.stacklayout.setCurrentIndex(3)
+
+
+class Worker(QObject):
+    finished = pyqtSignal()
+    progress = pyqtSignal(int)
+
+    def run(self):
+        """Long-running task."""
+        pin = "".join([str(random.randint(0, 9)) for i in range(6)])
+        create_game_widget.pin_holder.setText(pin)
+        print("PIN generated")
+        result = servers.insert_one({
+            "IP": socket.gethostbyname(socket.gethostname()),
+            "PIN": pin
+        })
+        print(result)
+        self.finished.emit()
+
+
+class Worker3(QObject):
+    finished = pyqtSignal()
+    progress = pyqtSignal(int)
+
+    def run(self):
+        # Establecemos el tipo de socket/conexion
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        port = 5000  # Puerto de comunicacion
+        sock.bind((join_game_widget.server["IP"], port))  # IP y Puerto de conexion en una Tupla
+
+        print("esperando conexiones en el puerto ", port)
+        # Vamos a esperar que un cliente se conecte
+        # Mientras tanto el script se va a pausar
+        sock.listen(1)
+        # Cuando un cliente se conecte vamos a obtener la client_addr osea la direccion
+        # tambien vamos a obtener la con, osea la conexion que servira para enviar datos y recibir datos
+        con, client_addr = sock.accept()
+        data = pickle.dumps(questions)
+        con.send(data)
+        con.close()
+        sock.close()
+        self.finished.emit()
 
 
 class MainWindow(QMainWindow):
@@ -604,15 +790,11 @@ class MainWindow(QMainWindow):
         pagelayout = QVBoxLayout()
         pagelayout.addLayout(self.stacklayout)
 
-        # self.trivia_menu_widget = TriviaMenu()
-        # self.question_widget = Question()
-        # self.final_score_widget = FinalScores()
         self.stacklayout.addWidget(trivia_menu_widget)
+        self.stacklayout.addWidget(join_game_widget)
+        self.stacklayout.addWidget(create_game_widget)
         self.stacklayout.addWidget(question_widget)
         self.stacklayout.addWidget(final_score_widget)
-        # self.stacklayout.addWidget(TriviaMenu())
-        # self.stacklayout.addWidget(Question())
-        # self.stacklayout.addWidget(FinalScores())
 
         self.stacklayout.setCurrentIndex(0)
 
@@ -629,6 +811,8 @@ class MainWindow(QMainWindow):
 
 
 app = QApplication(sys.argv)
+create_game_widget = CreateGame()
+join_game_widget = JoinGame()
 trivia_menu_widget = TriviaMenu()
 question_widget = Question()
 final_score_widget = FinalScores()
